@@ -567,6 +567,14 @@ AG_GST_CHECK_FEATURE(XSHM, [X Shared Memory extension], , [
   AC_SUBST(XSHM_LIBS)
 ])
 
+dnl set default video converter
+if test "x$gst_use_vspfilter" = xyes; then
+  DEFAULT_CNV="vspfilter"
+else
+  DEFAULT_CNV="videoconvert"
+fi
+AC_SUBST(DEFAULT_CNV)
+
 dnl *** ext plug-ins ***
 dnl keep this list sorted alphabetically !
 
