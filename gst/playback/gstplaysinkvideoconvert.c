@@ -21,6 +21,8 @@
 #include "config.h"
 #endif
 
+#include <string.h>
+
 #include "gstplaysinkvideoconvert.h"
 
 #include <gst/pbutils/pbutils.h>
@@ -60,17 +62,19 @@ gst_play_sink_video_convert_add_conversion_elements (GstPlaySinkVideoConvert *
     if (el)
       prev = el;
 
-    el = gst_play_sink_convert_bin_add_conversion_element_factory (cbin,
-        "videoscale", "scale");
-    if (el) {
-      /* Add black borders if necessary to keep the DAR */
-      g_object_set (el, "add-borders", TRUE, NULL);
-      if (prev) {
-        if (!gst_element_link_pads_full (prev, "src", el, "sink",
-                GST_PAD_LINK_CHECK_TEMPLATE_CAPS))
-          goto link_failed;
+    if (strcmp (COLORSPACE, "vspfilter") != 0) {
+      el = gst_play_sink_convert_bin_add_conversion_element_factory (cbin,
+          "videoscale", "scale");
+      if (el) {
+        /* Add black borders if necessary to keep the DAR */
+        g_object_set (el, "add-borders", TRUE, NULL);
+        if (prev) {
+          if (!gst_element_link_pads_full (prev, "src", el, "sink",
+                  GST_PAD_LINK_CHECK_TEMPLATE_CAPS))
+            goto link_failed;
+        }
+        prev = el;
       }
-      prev = el;
     }
   }
 
