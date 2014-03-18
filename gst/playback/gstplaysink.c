@@ -1695,25 +1695,6 @@ gen_video_chain (GstPlaySink * playsink, gboolean raw, gboolean async)
     }
   }
 
-  /* decouple decoder from sink, this improves playback quite a lot since the
-   * decoder can continue while the sink blocks for synchronisation. We don't
-   * need a lot of buffers as this consumes a lot of memory and we don't want
-   * too little because else we would be context switching too quickly. */
-  chain->queue = gst_element_factory_make ("queue", "vqueue");
-  if (chain->queue == NULL) {
-    post_missing_element_message (playsink, "queue");
-    GST_ELEMENT_WARNING (playsink, CORE, MISSING_PLUGIN,
-        (_("Missing element '%s' - check your GStreamer installation."),
-            "queue"), ("video rendering might be suboptimal"));
-    head = chain->sink;
-    prev = NULL;
-  } else {
-    g_object_set (G_OBJECT (chain->queue), "max-size-buffers", 3,
-        "max-size-bytes", 0, "max-size-time", (gint64) 0, "silent", TRUE, NULL);
-    gst_bin_add (bin, chain->queue);
-    head = prev = chain->queue;
-  }
-
   GST_OBJECT_LOCK (playsink);
   if (playsink->colorbalance_element) {
     g_signal_handler_disconnect (playsink->colorbalance_element,
@@ -1753,17 +1734,36 @@ gen_video_chain (GstPlaySink * playsink, gboolean raw, gboolean async)
     GST_OBJECT_UNLOCK (playsink);
 
     gst_bin_add (bin, chain->conv);
-    if (prev) {
-      if (!gst_element_link_pads_full (prev, "src", chain->conv, "sink",
-              GST_PAD_LINK_CHECK_TEMPLATE_CAPS))
-        goto link_failed;
-    } else {
-      head = chain->conv;
-    }
-    prev = chain->conv;
+
+    head = prev = chain->conv;
   }
 
   update_colorbalance (playsink);
+
+  /* decouple decoder from sink, this improves playback quite a lot since the
+   * decoder can continue while the sink blocks for synchronisation. We don't
+   * need a lot of buffers as this consumes a lot of memory and we don't want
+   * too little because else we would be context switching too quickly. */
+  chain->queue = gst_element_factory_make ("queue", "vqueue");
+  if (chain->queue == NULL) {
+    post_missing_element_message (playsink, "queue");
+    GST_ELEMENT_WARNING (playsink, CORE, MISSING_PLUGIN,
+        (_("Missing element '%s' - check your GStreamer installation."),
+            "queue"), ("video rendering might be suboptimal"));
+  } else {
+    g_object_set (G_OBJECT (chain->queue), "max-size-buffers", 3,
+        "max-size-bytes", 0, "max-size-time", (gint64) 0, "silent", TRUE, NULL);
+
+    gst_bin_add (bin, chain->queue);
+
+    if (prev) {
+      if (!gst_element_link_pads_full (prev, "src", chain->queue, "sink",
+              GST_PAD_LINK_CHECK_TEMPLATE_CAPS))
+        goto link_failed;
+    } else
+      head = chain->queue;
+    prev = chain->queue;
+  }
 
   if (prev) {
     GST_DEBUG_OBJECT (playsink, "linking to sink");
