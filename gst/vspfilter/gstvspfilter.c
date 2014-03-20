@@ -717,7 +717,14 @@ set_vsp_entities (GstVspFilter * space, GstVideoFrame * in_frame,
 
   in_width = GST_VIDEO_FRAME_COMP_WIDTH (in_frame, 0);
   in_height = GST_VIDEO_FRAME_COMP_HEIGHT (in_frame, 0);
-  out_width = GST_VIDEO_FRAME_COMP_WIDTH (out_frame, 0);
+
+  /* A stride can't be specified to V4L2 driver in the conversion,
+   * so the stride which isn't equal to the width of an output image can't
+   * be dealt with. Therefore the width of the output port should be
+   * specified as the stride of an output buffer.
+   */
+  out_width = GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0) /
+      GST_VIDEO_FRAME_COMP_PSTRIDE (out_frame, 0);
   out_height = GST_VIDEO_FRAME_COMP_HEIGHT (out_frame, 0);
 
   set_format (space, vsp_info->v4lout_fd, in_width, in_height,
