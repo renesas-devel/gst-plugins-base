@@ -680,44 +680,29 @@ init_entity_pad (GstVspFilter * space, gint fd, gint index, guint pad,
 }
 
 static gboolean
-set_vsp_entities (GstVspFilter * space, GstVideoFrame * in_frame,
-    GstVideoFrame * out_frame)
+set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
+    gint in_height, GstVideoFormat out_fmt, gint out_width, gint out_height)
 {
   GstVspFilterVspInfo *vsp_info;
   gint ret;
   gchar tmp[256];
-  gint in_width, in_height;
-  gint out_width, out_height;
 
   vsp_info = space->vsp_info;
 
   if (vsp_info->already_setup_info)
     return TRUE;
 
-  set_colorspace (GST_VIDEO_FRAME_FORMAT (in_frame), &vsp_info->format[OUT],
-      &vsp_info->code[OUT], &vsp_info->n_planes[OUT]);
-  set_colorspace (GST_VIDEO_FRAME_FORMAT (out_frame), &vsp_info->format[CAP],
-      &vsp_info->code[CAP], &vsp_info->n_planes[CAP]);
+  set_colorspace (in_fmt, &vsp_info->format[OUT], &vsp_info->code[OUT],
+      &vsp_info->n_planes[OUT]);
+  set_colorspace (out_fmt, &vsp_info->format[CAP], &vsp_info->code[CAP],
+      &vsp_info->n_planes[CAP]);
 
-  GST_DEBUG_OBJECT (space, "in format=%d  out format=%d",
-      GST_VIDEO_FRAME_FORMAT (in_frame), GST_VIDEO_FRAME_FORMAT (out_frame));
+  GST_DEBUG_OBJECT (space, "in format=%d  out format=%d", in_fmt, out_fmt);
 
   GST_DEBUG_OBJECT (space, "set_colorspace[OUT]: format=%d code=%d n_planes=%d",
       vsp_info->format[OUT], vsp_info->code[OUT], vsp_info->n_planes[OUT]);
   GST_DEBUG_OBJECT (space, "set_colorspace[CAP]: format=%d code=%d n_planes=%d",
       vsp_info->format[CAP], vsp_info->code[CAP], vsp_info->n_planes[CAP]);
-
-  in_width = GST_VIDEO_FRAME_COMP_WIDTH (in_frame, 0);
-  in_height = GST_VIDEO_FRAME_COMP_HEIGHT (in_frame, 0);
-
-  /* A stride can't be specified to V4L2 driver in the conversion,
-   * so the stride which isn't equal to the width of an output image can't
-   * be dealt with. Therefore the width of the output port should be
-   * specified as the stride of an output buffer.
-   */
-  out_width = GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0) /
-      GST_VIDEO_FRAME_COMP_PSTRIDE (out_frame, 0);
-  out_height = GST_VIDEO_FRAME_COMP_HEIGHT (out_frame, 0);
 
   set_format (space, vsp_info->v4lout_fd, in_width, in_height,
       OUT, V4L2_CAP_VIDEO_OUTPUT_MPLANE, V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
@@ -1332,6 +1317,8 @@ gst_vsp_filter_transform_frame (GstVideoFilter * filter,
   gint ret;
   struct v4l2_plane in_planes[VIDEO_MAX_PLANES];
   struct v4l2_plane out_planes[VIDEO_MAX_PLANES];
+  GstVideoInfo *in_info;
+  GstVideoInfo *out_info;
   gint i;
 
   space = GST_VSP_FILTER_CAST (filter);
@@ -1342,7 +1329,18 @@ gst_vsp_filter_transform_frame (GstVideoFilter * filter,
       GST_VIDEO_INFO_NAME (&filter->in_info),
       GST_VIDEO_INFO_NAME (&filter->out_info));
 
-  if (!set_vsp_entities (space, in_frame, out_frame)) {
+  in_info = &filter->in_info;
+  out_info = &filter->out_info;
+
+  /* A stride can't be specified to V4L2 driver in the conversion,
+   * so the stride which isn't equal to the width of an output image can't
+   * be dealt with. Therefore the width of the output port should be
+   * specified as the stride of an output buffer.
+   */
+  if (!set_vsp_entities (space, in_info->finfo->format, in_info->width,
+          in_info->height, out_info->finfo->format,
+          GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0) /
+          out_info->finfo->pixel_stride[0], out_info->height)) {
     GST_ERROR_OBJECT (space, "set_vsp_entities failed");
     return GST_FLOW_ERROR;
   }
