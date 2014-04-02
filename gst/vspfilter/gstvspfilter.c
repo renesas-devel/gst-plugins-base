@@ -43,6 +43,7 @@
 #include <gst/video/video.h>
 #include <gst/video/gstvideometa.h>
 #include <gst/video/gstvideopool.h>
+#include <gst/allocators/gstdmabuf.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -1115,6 +1116,69 @@ gst_vsp_filter_change_state (GstElement * element, GstStateChange transition)
   return ret;
 }
 
+static GstFlowReturn
+gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
+    GstBuffer * outbuf)
+{
+  GstVideoFilter *filter = GST_VIDEO_FILTER_CAST (trans);
+  GstMemory *gmem;
+  GstVideoFrame in_frame, out_frame;
+  GstVspFilterFrame in_vframe, out_vframe;
+  GstFlowReturn ret;
+
+  if (G_UNLIKELY (!filter->negotiated))
+    goto unknown_format;
+
+  gmem = gst_buffer_get_memory (outbuf, 0);
+
+  if (gst_is_dmabuf_memory (gmem)) {
+    if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
+      goto invalid_buffer;
+
+    in_vframe.frame = &in_frame;
+    out_vframe.dmafd = gst_dmabuf_memory_get_fd (gmem);
+
+    ret =
+        gst_vsp_filter_transform_frame_process (filter, in_vframe, out_vframe);
+
+    gst_video_frame_unmap (&in_frame);
+  } else {
+    if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
+      goto invalid_buffer;
+
+    if (!gst_video_frame_map (&out_frame, &filter->out_info, outbuf,
+            GST_MAP_WRITE))
+      goto invalid_buffer;
+
+    in_vframe.frame = &in_frame;
+    out_vframe.frame = &out_frame;
+
+    ret =
+        gst_vsp_filter_transform_frame_process (filter, in_vframe, out_vframe);
+
+    gst_video_frame_unmap (&in_frame);
+    gst_video_frame_unmap (&out_frame);
+  }
+
+  gst_memory_unref (gmem);
+
+  return ret;
+
+  /* ERRORS */
+unknown_format:
+  {
+    GST_ELEMENT_ERROR (filter, CORE, NOT_IMPLEMENTED, (NULL),
+        ("unknown format"));
+    return GST_FLOW_NOT_NEGOTIATED;
+  }
+invalid_buffer:
+  {
+    GST_ELEMENT_WARNING (filter, CORE, NOT_IMPLEMENTED, (NULL),
+        ("invalid video buffer received"));
+    return GST_FLOW_OK;
+  }
+}
+
 static void
 gst_vsp_filter_class_init (GstVspFilterClass * klass)
 {
@@ -1161,6 +1225,8 @@ gst_vsp_filter_class_init (GstVspFilterClass * klass)
       GST_DEBUG_FUNCPTR (gst_vsp_filter_filter_meta);
   gstbasetransform_class->transform_meta =
       GST_DEBUG_FUNCPTR (gst_vsp_filter_transform_meta);
+  gstbasetransform_class->transform =
+      GST_DEBUG_FUNCPTR (gst_vsp_filter_transform);
 
   gstbasetransform_class->passthrough_on_same_caps = TRUE;
 
