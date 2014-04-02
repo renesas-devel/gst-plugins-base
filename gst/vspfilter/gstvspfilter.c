@@ -470,15 +470,7 @@ set_format (GstVspFilter * space, gint fd, guint width, guint height,
     vsp_info->plane_stride[index][i] = fmt.fmt.pix_mp.plane_fmt[i].bytesperline;
   }
 
-  switch (vsp_info->io[index]) {
-    case IO_METHOD_READ:
-      break;
-
-    case IO_METHOD_USERPTR:
-    case IO_METHOD_MMAP:
-      request_buffers (space, fd, index, buftype, N_BUFFERS);
-      break;
-  }
+  request_buffers (space, fd, index, buftype, N_BUFFERS);
 }
 
 static gint
