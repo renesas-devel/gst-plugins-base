@@ -1022,7 +1022,7 @@ gst_vsp_filter_vsp_device_init (GstVspFilter * space)
 
   vsp_info = space->vsp_info;
 
-  vsp_info->io[OUT] = vsp_info->io[CAP] = IO_METHOD_USERPTR;
+  vsp_info->io[OUT] = vsp_info->io[CAP] = V4L2_MEMORY_USERPTR;
 
   /* Set the default path of gstvspfilter.conf */
   g_setenv (env_config_name, "/etc", FALSE);

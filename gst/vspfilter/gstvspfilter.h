@@ -77,12 +77,6 @@ enum {
   RESZ = 2,
 };
 
-typedef enum {
-  IO_METHOD_READ,
-  IO_METHOD_MMAP,
-  IO_METHOD_USERPTR,
-} io_method;
-
 struct _GstVspFilterVspInfo {
   gchar *dev_name[MAX_DEVICES];
   gboolean prop_dev_name[MAX_DEVICES];
@@ -95,7 +89,7 @@ struct _GstVspFilterVspInfo {
   guint format[MAX_DEVICES];
   enum v4l2_mbus_pixelcode code[MAX_DEVICES];
   guint n_planes[MAX_DEVICES];
-  io_method io[MAX_DEVICES];
+  enum v4l2_memory io[MAX_DEVICES];
   guint  n_buffers[MAX_DEVICES];
   struct buffer buffers[MAX_DEVICES][N_BUFFERS][VIDEO_MAX_PLANES];
   struct media_entity_desc entity[MAX_ENTITIES];
