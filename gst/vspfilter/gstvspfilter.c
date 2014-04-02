@@ -44,6 +44,7 @@
 #include <gst/video/gstvideometa.h>
 #include <gst/video/gstvideopool.h>
 #include <gst/allocators/gstdmabuf.h>
+#include <gst/gstquery.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -1117,6 +1118,81 @@ gst_vsp_filter_change_state (GstElement * element, GstStateChange transition)
   return ret;
 }
 
+/* configure the allocation query that was answered downstream, we can configure
+ * some properties on it. Only called when not in passthrough mode. */
+static gboolean
+gst_vsp_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
+{
+  GstVspFilter *space;
+  GstVspFilterVspInfo *vsp_info;
+  GstBufferPool *pool = NULL;
+  GstAllocator *allocator;
+  guint n_allocators;
+  guint dmabuf_pool_pos = 0;
+  GstStructure *config;
+  guint min, max, size;
+  gboolean update_pool;
+  guint i;
+
+  space = GST_VSP_FILTER_CAST (trans);
+  vsp_info = space->vsp_info;
+
+  n_allocators = gst_query_get_n_allocation_params (query);
+  for (i = 0; i < n_allocators; i++) {
+    gst_query_parse_nth_allocation_param (query, i, &allocator, NULL);
+
+    if (g_strcmp0 (allocator->mem_type, GST_ALLOCATOR_DMABUF) == 0) {
+      GST_DEBUG_OBJECT (space, "found a dmabuf allocator");
+      dmabuf_pool_pos = i;
+      vsp_info->io[CAP] = V4L2_MEMORY_DMABUF;
+      gst_object_unref (allocator);
+      break;
+    }
+
+    gst_object_unref (allocator);
+  }
+
+  /* Delete buffer pools registered before the pool of dmabuf in
+   * the buffer pool list so that the dmabuf allocator will be selected
+   * by the parent class.
+   */
+  for (i = 0; i < dmabuf_pool_pos; i++)
+    gst_query_remove_nth_allocation_param (query, i);
+
+  if (gst_query_get_n_allocation_pools (query) > 0) {
+    gst_query_parse_nth_allocation_pool (query, 0, &pool, &size, &min, &max);
+
+    update_pool = TRUE;
+  } else {
+    GstCaps *outcaps;
+    GstVideoInfo vinfo;
+
+    gst_query_parse_allocation (query, &outcaps, NULL);
+    gst_video_info_init (&vinfo);
+    gst_video_info_from_caps (&vinfo, outcaps);
+    size = vinfo.size;
+    min = max = 0;
+    update_pool = FALSE;
+  }
+
+  if (!pool)
+    pool = gst_video_buffer_pool_new ();
+
+  config = gst_buffer_pool_get_config (pool);
+  gst_buffer_pool_config_add_option (config, GST_BUFFER_POOL_OPTION_VIDEO_META);
+  gst_buffer_pool_set_config (pool, config);
+
+  if (update_pool)
+    gst_query_set_nth_allocation_pool (query, 0, pool, size, min, max);
+  else
+    gst_query_add_allocation_pool (query, pool, size, min, max);
+
+  gst_object_unref (pool);
+
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->decide_allocation (trans,
+      query);
+}
+
 static GstFlowReturn
 gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     GstBuffer * outbuf)
@@ -1236,6 +1312,8 @@ gst_vsp_filter_class_init (GstVspFilterClass * klass)
       GST_DEBUG_FUNCPTR (gst_vsp_filter_filter_meta);
   gstbasetransform_class->transform_meta =
       GST_DEBUG_FUNCPTR (gst_vsp_filter_transform_meta);
+  gstbasetransform_class->decide_allocation =
+      GST_DEBUG_FUNCPTR (gst_vsp_filter_decide_allocation);
   gstbasetransform_class->transform =
       GST_DEBUG_FUNCPTR (gst_vsp_filter_transform);
 
