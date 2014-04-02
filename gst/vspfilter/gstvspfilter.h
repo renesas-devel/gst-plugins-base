@@ -65,6 +65,7 @@ typedef struct _GstVspFilter GstVspFilter;
 typedef struct _GstVspFilterClass GstVspFilterClass;
 
 typedef struct _GstVspFilterVspInfo GstVspFilterVspInfo;
+typedef union _GstVspFilterFrame GstVspFilterFrame;
 
 struct buffer {
   void *start;
@@ -97,6 +98,11 @@ struct _GstVspFilterVspInfo {
   gboolean already_device_initialized[MAX_DEVICES];
   gboolean already_setup_info;
   guint16 plane_stride[MAX_DEVICES][VIDEO_MAX_PLANES];
+};
+
+union _GstVspFilterFrame {
+  GstVideoFrame *frame;
+  gint dmafd;
 };
 
 /**

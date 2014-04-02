@@ -93,6 +93,8 @@ static gboolean gst_vsp_filter_set_info (GstVideoFilter * filter,
     GstVideoInfo * out_info);
 static GstFlowReturn gst_vsp_filter_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
+static GstFlowReturn gst_vsp_filter_transform_frame_process (GstVideoFilter *
+    filter, GstVspFilterFrame in_vframe, GstVspFilterFrame out_vframe);
 
 /* copies the given caps */
 static GstCaps *
@@ -1307,8 +1309,8 @@ start_capturing (GstVspFilter * space, int fd, int index,
 }
 
 static GstFlowReturn
-gst_vsp_filter_transform_frame (GstVideoFilter * filter,
-    GstVideoFrame * in_frame, GstVideoFrame * out_frame)
+gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
+    GstVspFilterFrame in_vframe, GstVspFilterFrame out_vframe)
 {
   GstVspFilter *space;
   GstVspFilterVspInfo *vsp_info;
@@ -1339,7 +1341,7 @@ gst_vsp_filter_transform_frame (GstVideoFilter * filter,
    */
   if (!set_vsp_entities (space, in_info->finfo->format, in_info->width,
           in_info->height, out_info->finfo->format,
-          GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0) /
+          GST_VIDEO_FRAME_COMP_STRIDE (out_vframe.frame, 0) /
           out_info->finfo->pixel_stride[0], out_info->height)) {
     GST_ERROR_OBJECT (space, "set_vsp_entities failed");
     return GST_FLOW_ERROR;
@@ -1347,14 +1349,14 @@ gst_vsp_filter_transform_frame (GstVideoFilter * filter,
 
   /* set up planes for queuing an input buffer */
   for (i = 0; i < vsp_info->n_planes[OUT]; i++) {
-    in_planes[i].m.userptr = (unsigned long) in_frame->map[i].data;
-    in_planes[i].length = in_frame->map[i].size;
+    in_planes[i].m.userptr = (unsigned long) in_vframe.frame->map[i].data;
+    in_planes[i].length = in_vframe.frame->map[i].size;
   }
 
   /* set up planes for queuing an output buffer */
   for (i = 0; i < vsp_info->n_planes[CAP]; i++) {
-    out_planes[i].m.userptr = (unsigned long) out_frame->map[i].data;
-    out_planes[i].length = out_frame->map[i].size;
+    out_planes[i].m.userptr = (unsigned long) out_vframe.frame->map[i].data;
+    out_planes[i].length = out_vframe.frame->map[i].size;
   }
 
   queue_buffer (space, vsp_info->v4lout_fd, OUT,
@@ -1401,6 +1403,18 @@ gst_vsp_filter_transform_frame (GstVideoFilter * filter,
   }
 
   return GST_FLOW_OK;
+}
+
+static GstFlowReturn
+gst_vsp_filter_transform_frame (GstVideoFilter * filter,
+    GstVideoFrame * in_frame, GstVideoFrame * out_frame)
+{
+  GstVspFilterFrame in_vframe, out_vframe;
+
+  in_vframe.frame = in_frame;
+  out_vframe.frame = out_frame;
+
+  return gst_vsp_filter_transform_frame_process (filter, in_vframe, out_vframe);
 }
 
 static gboolean
