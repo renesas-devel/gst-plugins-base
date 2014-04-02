@@ -1354,9 +1354,19 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   }
 
   /* set up planes for queuing an output buffer */
-  for (i = 0; i < vsp_info->n_planes[CAP]; i++) {
-    out_planes[i].m.userptr = (unsigned long) out_vframe.frame->map[i].data;
-    out_planes[i].length = out_vframe.frame->map[i].size;
+  switch (vsp_info->io[CAP]) {
+    case V4L2_MEMORY_USERPTR:
+      for (i = 0; i < vsp_info->n_planes[CAP]; i++) {
+        out_planes[i].m.userptr = (unsigned long) out_vframe.frame->map[i].data;
+        out_planes[i].length = out_vframe.frame->map[i].size;
+      }
+      break;
+    case V4L2_MEMORY_DMABUF:
+      out_planes[0].m.fd = out_vframe.dmafd;
+      break;
+    default:
+      GST_ERROR_OBJECT (space, "unsupported V4L2 I/O method");
+      return GST_FLOW_ERROR;
   }
 
   queue_buffer (space, vsp_info->v4lout_fd, OUT,
