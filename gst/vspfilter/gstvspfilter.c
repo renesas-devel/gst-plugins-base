@@ -693,6 +693,31 @@ init_entity_pad (GstVspFilter * space, gint fd, gint index, guint pad,
 }
 
 static gboolean
+get_wpf_output_entity_name (GstVspFilter * space, gchar * wpf_output_name,
+    size_t maxlen)
+{
+  GstVspFilterVspInfo *vsp_info;
+  gchar *dev;
+  gchar path[256];
+  gchar *newline;
+
+  vsp_info = space->vsp_info;
+
+  dev = strrchr (vsp_info->dev_name[CAP], '/') + 1;
+  snprintf (path, sizeof (path), "/sys/class/video4linux/%s/name", dev);
+  if (fgets_with_openclose (path, wpf_output_name, maxlen) < 0) {
+    GST_ERROR_OBJECT (space, "%s couldn't open", path);
+    return FALSE;
+  }
+  /* Delete a newline */
+  newline = strrchr (wpf_output_name, '\n');
+  if (newline)
+    *newline = '\0';
+
+  return TRUE;
+}
+
+static gboolean
 set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
     gint in_height, GstVideoFormat out_fmt, gint out_width, gint out_height)
 {
@@ -818,7 +843,10 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
         vsp_info->entity_name[OUT], vsp_info->entity_name[CAP]);
   }
 
-  sprintf (tmp, "vsp1.2 wpf.0 output");
+  if (!get_wpf_output_entity_name (space, tmp, sizeof (tmp))) {
+    GST_ERROR_OBJECT (space, "get_wpf_output_entity_name failed");
+    return FALSE;
+  }
   ret = get_media_entity (space, tmp, &vsp_info->entity[3]);
   ret = activate_link (space, &vsp_info->entity[CAP], &vsp_info->entity[3]);
   if (ret) {
@@ -827,6 +855,8 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
         vsp_info->entity_name[CAP]);
     return FALSE;
   }
+  GST_DEBUG_OBJECT (space,
+      "%s has been linked as the terminal of the entities link", tmp);
 
   /* sink pad in RPF */
   if (!init_entity_pad (space, vsp_info->v4lsub_fd[OUT], OUT, 0, in_width,
