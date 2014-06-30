@@ -1598,6 +1598,10 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
       break;
     case V4L2_MEMORY_DMABUF:
       out_planes[0].m.fd = out_vframe.dmafd;
+      /* In the kernel space, the length (memory size) is obtained from
+         the dmabuf descriptor when the length is specified as 0. */
+      out_planes[0].length = 0;
+      out_planes[0].data_offset = 0;
       break;
     default:
       GST_ERROR_OBJECT (space, "unsupported V4L2 I/O method");
