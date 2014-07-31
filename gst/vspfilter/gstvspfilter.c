@@ -1082,8 +1082,6 @@ gst_vsp_filter_vsp_device_init (GstVspFilter * space)
 
   vsp_info = space->vsp_info;
 
-  vsp_info->io[OUT] = vsp_info->io[CAP] = V4L2_MEMORY_USERPTR;
-
   /* Set the default path of gstvspfilter.conf */
   g_setenv (env_config_name, "/etc", FALSE);
 
@@ -1202,7 +1200,6 @@ static gboolean
 gst_vsp_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 {
   GstVspFilter *space;
-  GstVspFilterVspInfo *vsp_info;
   GstBufferPool *pool = NULL;
   GstAllocator *allocator;
   guint n_allocators;
@@ -1213,7 +1210,6 @@ gst_vsp_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
   guint i;
 
   space = GST_VSP_FILTER_CAST (trans);
-  vsp_info = space->vsp_info;
 
   n_allocators = gst_query_get_n_allocation_params (query);
   for (i = 0; i < n_allocators; i++) {
@@ -1222,7 +1218,6 @@ gst_vsp_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     if (g_strcmp0 (allocator->mem_type, GST_ALLOCATOR_DMABUF) == 0) {
       GST_DEBUG_OBJECT (space, "found a dmabuf allocator");
       dmabuf_pool_pos = i;
-      vsp_info->io[CAP] = V4L2_MEMORY_DMABUF;
       gst_object_unref (allocator);
       break;
     }

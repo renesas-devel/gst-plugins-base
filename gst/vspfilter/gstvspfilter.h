@@ -91,7 +91,6 @@ struct _GstVspFilterVspInfo {
   guint format[MAX_DEVICES];
   enum v4l2_mbus_pixelcode code[MAX_DEVICES];
   guint n_planes[MAX_DEVICES];
-  enum v4l2_memory io[MAX_DEVICES];
   guint  n_buffers[MAX_DEVICES];
   struct buffer buffers[MAX_DEVICES][N_BUFFERS][VIDEO_MAX_PLANES];
   struct media_entity_desc entity[MAX_ENTITIES];
