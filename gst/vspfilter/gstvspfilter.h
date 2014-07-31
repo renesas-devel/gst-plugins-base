@@ -102,7 +102,7 @@ struct _GstVspFilterVspInfo {
 
 union _GstVspFilterFrame {
   GstVideoFrame *frame;
-  gint dmafd;
+  gint dmafd[GST_VIDEO_MAX_PLANES];
 };
 
 struct _GstVspFilterFrameInfo {
