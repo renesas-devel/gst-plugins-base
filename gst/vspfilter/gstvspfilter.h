@@ -65,6 +65,7 @@ typedef struct _GstVspFilter GstVspFilter;
 typedef struct _GstVspFilterClass GstVspFilterClass;
 
 typedef struct _GstVspFilterVspInfo GstVspFilterVspInfo;
+typedef struct _GstVspFilterFrameInfo GstVspFilterFrameInfo;
 typedef union _GstVspFilterFrame GstVspFilterFrame;
 
 struct buffer {
@@ -103,6 +104,11 @@ struct _GstVspFilterVspInfo {
 union _GstVspFilterFrame {
   GstVideoFrame *frame;
   gint dmafd;
+};
+
+struct _GstVspFilterFrameInfo {
+  enum v4l2_memory io;
+  GstVspFilterFrame vframe;
 };
 
 /**
