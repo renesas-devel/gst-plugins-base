@@ -1289,40 +1289,31 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
 
   gmem = gst_buffer_get_memory (outbuf, 0);
 
+  if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
+    goto invalid_buffer;
+
+  in_vframe_info.io = V4L2_MEMORY_USERPTR;
+  in_vframe_info.vframe.frame = &in_frame;
+
   if (gst_is_dmabuf_memory (gmem)) {
-    if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
-      goto invalid_buffer;
-
-    in_vframe_info.io = V4L2_MEMORY_USERPTR;
-    in_vframe_info.vframe.frame = &in_frame;
-
     out_vframe_info.io = V4L2_MEMORY_DMABUF;
     out_vframe_info.vframe.dmafd = gst_dmabuf_memory_get_fd (gmem);
-
-    ret =
-        gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
-        &out_vframe_info, out_stride);
-
-    gst_video_frame_unmap (&in_frame);
   } else {
-    if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
-      goto invalid_buffer;
-
     if (!gst_video_frame_map (&out_frame, &filter->out_info, outbuf,
             GST_MAP_WRITE))
       goto invalid_buffer;
 
-    in_vframe_info.io = out_vframe_info.io = V4L2_MEMORY_USERPTR;
-    in_vframe_info.vframe.frame = &in_frame;
+    out_vframe_info.io = V4L2_MEMORY_USERPTR;
     out_vframe_info.vframe.frame = &out_frame;
-
-    ret =
-        gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
-        &out_vframe_info, out_stride);
-
-    gst_video_frame_unmap (&in_frame);
-    gst_video_frame_unmap (&out_frame);
   }
+
+  ret =
+      gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
+      &out_vframe_info, out_stride);
+
+  gst_video_frame_unmap (&in_frame);
+  if (!gst_is_dmabuf_memory (gmem))
+    gst_video_frame_unmap (&out_frame);
 
   gst_memory_unref (gmem);
 
