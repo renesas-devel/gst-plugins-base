@@ -1478,7 +1478,8 @@ gst_vsp_filter_get_property (GObject * object, guint property_id,
 
 static gint
 queue_buffer (GstVspFilter * space, int fd, int index,
-    enum v4l2_buf_type buftype, struct v4l2_plane *planes)
+    enum v4l2_buf_type buftype, struct v4l2_plane *planes,
+    enum v4l2_memory io[MAX_DEVICES])
 {
   GstVspFilterVspInfo *vsp_info;
   struct v4l2_buffer buf;
@@ -1488,7 +1489,7 @@ queue_buffer (GstVspFilter * space, int fd, int index,
   CLEAR (buf);
 
   buf.type = buftype;
-  buf.memory = vsp_info->io[index];
+  buf.memory = io[index];
   buf.index = 0;
   buf.m.planes = planes;
   buf.length = vsp_info->n_planes[index];
@@ -1504,7 +1505,8 @@ queue_buffer (GstVspFilter * space, int fd, int index,
 
 static gint
 dequeue_buffer (GstVspFilter * space, int fd, int index,
-    enum v4l2_buf_type buftype, struct v4l2_plane *planes)
+    enum v4l2_buf_type buftype, struct v4l2_plane *planes,
+    enum v4l2_memory io[MAX_DEVICES])
 {
   GstVspFilterVspInfo *vsp_info;
   struct v4l2_buffer buf;
@@ -1514,7 +1516,7 @@ dequeue_buffer (GstVspFilter * space, int fd, int index,
   CLEAR (buf);
 
   buf.type = buftype;
-  buf.memory = vsp_info->io[index];
+  buf.memory = io[index];
   buf.m.planes = planes;
   buf.length = vsp_info->n_planes[index];
 
@@ -1622,9 +1624,9 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   }
 
   queue_buffer (space, vsp_info->v4lout_fd, OUT,
-      V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, in_planes);
+      V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, in_planes, io);
   queue_buffer (space, vsp_info->v4lcap_fd, CAP,
-      V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, out_planes);
+      V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, out_planes, io);
 
   if (!vsp_info->is_stream_started) {
     if (!start_capturing (space, vsp_info->v4lout_fd, OUT,
@@ -1666,9 +1668,9 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
     }
 
     dequeue_buffer (space, vsp_info->v4lcap_fd, CAP,
-        V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, out_planes);
+        V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, out_planes, io);
     dequeue_buffer (space, vsp_info->v4lout_fd, OUT,
-        V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, in_planes);
+        V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, in_planes, io);
     break;
   }
 
