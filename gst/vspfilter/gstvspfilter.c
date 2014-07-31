@@ -96,8 +96,8 @@ static gboolean gst_vsp_filter_set_info (GstVideoFilter * filter,
 static GstFlowReturn gst_vsp_filter_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 static GstFlowReturn gst_vsp_filter_transform_frame_process (GstVideoFilter *
-    filter, GstVspFilterFrameInfo in_vframe_info,
-    GstVspFilterFrameInfo out_vframe_info, gint out_stride);
+    filter, GstVspFilterFrameInfo * in_vframe_info,
+    GstVspFilterFrameInfo * out_vframe_info, gint out_stride);
 
 /* copies the given caps */
 static GstCaps *
@@ -1303,8 +1303,8 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     out_vframe_info.vframe.dmafd = gst_dmabuf_memory_get_fd (gmem);
 
     ret =
-        gst_vsp_filter_transform_frame_process (filter, in_vframe_info,
-        out_vframe_info, out_stride);
+        gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
+        &out_vframe_info, out_stride);
 
     gst_video_frame_unmap (&in_frame);
   } else {
@@ -1320,8 +1320,8 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     out_vframe_info.vframe.frame = &out_frame;
 
     ret =
-        gst_vsp_filter_transform_frame_process (filter, in_vframe_info,
-        out_vframe_info, out_stride);
+        gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
+        &out_vframe_info, out_stride);
 
     gst_video_frame_unmap (&in_frame);
     gst_video_frame_unmap (&out_frame);
@@ -1549,8 +1549,8 @@ start_capturing (GstVspFilter * space, int fd, int index,
 
 static GstFlowReturn
 gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
-    GstVspFilterFrameInfo in_vframe_info, GstVspFilterFrameInfo out_vframe_info,
-    gint out_stride)
+    GstVspFilterFrameInfo * in_vframe_info,
+    GstVspFilterFrameInfo * out_vframe_info, gint out_stride)
 {
   GstVspFilter *space;
   GstVspFilterVspInfo *vsp_info;
@@ -1590,21 +1590,21 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   /* set up planes for queuing an input buffer */
   for (i = 0; i < vsp_info->n_planes[OUT]; i++) {
     in_planes[i].m.userptr =
-        (unsigned long) in_vframe_info.vframe.frame->map[i].data;
-    in_planes[i].length = in_vframe_info.vframe.frame->map[i].size;
+        (unsigned long) in_vframe_info->vframe.frame->map[i].data;
+    in_planes[i].length = in_vframe_info->vframe.frame->map[i].size;
   }
 
   /* set up planes for queuing an output buffer */
-  switch (out_vframe_info.io) {
+  switch (out_vframe_info->io) {
     case V4L2_MEMORY_USERPTR:
       for (i = 0; i < vsp_info->n_planes[CAP]; i++) {
         out_planes[i].m.userptr =
-            (unsigned long) out_vframe_info.vframe.frame->map[i].data;
-        out_planes[i].length = out_vframe_info.vframe.frame->map[i].size;
+            (unsigned long) out_vframe_info->vframe.frame->map[i].data;
+        out_planes[i].length = out_vframe_info->vframe.frame->map[i].size;
       }
       break;
     case V4L2_MEMORY_DMABUF:
-      out_planes[0].m.fd = out_vframe_info.vframe.dmafd;
+      out_planes[0].m.fd = out_vframe_info->vframe.dmafd;
       /* In the kernel space, the length (memory size) is obtained from
          the dmabuf descriptor when the length is specified as 0. */
       out_planes[0].length = 0;
@@ -1679,8 +1679,8 @@ gst_vsp_filter_transform_frame (GstVideoFilter * filter,
   in_vframe_info.vframe.frame = in_frame;
   out_vframe_info.vframe.frame = out_frame;
 
-  return gst_vsp_filter_transform_frame_process (filter, in_vframe_info,
-      out_vframe_info, GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0));
+  return gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
+      &out_vframe_info, GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0));
 }
 
 static gboolean
