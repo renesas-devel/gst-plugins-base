@@ -407,7 +407,7 @@ gst_vsp_filter_transform_meta (GstBaseTransform * trans, GstBuffer * outbuf,
 
 static gboolean
 request_buffers (GstVspFilter * space, gint fd, gint index,
-    enum v4l2_buf_type buftype, gint n_bufs)
+    enum v4l2_buf_type buftype, gint n_bufs, enum v4l2_memory io[MAX_DEVICES])
 {
   struct v4l2_requestbuffers req;
   GstVspFilterVspInfo *vsp_info;
@@ -419,7 +419,7 @@ request_buffers (GstVspFilter * space, gint fd, gint index,
 
   req.count = n_bufs;
   req.type = buftype;
-  req.memory = vsp_info->io[index];
+  req.memory = io[index];
 
   if (-1 == xioctl (fd, VIDIOC_REQBUFS, &req)) {
     GST_ERROR_OBJECT (space, "VIDIOC_REQBUFS for %s errno=%d",
@@ -434,7 +434,8 @@ request_buffers (GstVspFilter * space, gint fd, gint index,
 
 static gboolean
 set_format (GstVspFilter * space, gint fd, guint width, guint height,
-    gint index, guint captype, enum v4l2_buf_type buftype)
+    gint index, guint captype, enum v4l2_buf_type buftype,
+    enum v4l2_memory io[MAX_DEVICES])
 {
   GstVspFilterVspInfo *vsp_info;
   struct v4l2_format fmt;
@@ -475,7 +476,7 @@ set_format (GstVspFilter * space, gint fd, guint width, guint height,
     vsp_info->plane_stride[index][i] = fmt.fmt.pix_mp.plane_fmt[i].bytesperline;
   }
 
-  if (!request_buffers (space, fd, index, buftype, N_BUFFERS)) {
+  if (!request_buffers (space, fd, index, buftype, N_BUFFERS, io)) {
     GST_ERROR_OBJECT (space, "request_buffers for %s failed.",
         vsp_info->dev_name[index]);
     return FALSE;
@@ -719,7 +720,8 @@ get_wpf_output_entity_name (GstVspFilter * space, gchar * wpf_output_name,
 
 static gboolean
 set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
-    gint in_height, GstVideoFormat out_fmt, gint out_width, gint out_height)
+    gint in_height, GstVideoFormat out_fmt, gint out_width, gint out_height,
+    enum v4l2_memory io[MAX_DEVICES])
 {
   GstVspFilterVspInfo *vsp_info;
   gint ret;
@@ -744,14 +746,14 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
 
   if (!set_format (space, vsp_info->v4lout_fd, in_width, in_height,
           OUT, V4L2_CAP_VIDEO_OUTPUT_MPLANE,
-          V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)) {
+          V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, io)) {
     GST_ERROR_OBJECT (space, "set_format for %s failed (%dx%d)",
         vsp_info->dev_name[OUT], in_width, in_height);
     return FALSE;
   }
   if (!set_format (space, vsp_info->v4lcap_fd, out_width, out_height,
           CAP, V4L2_CAP_VIDEO_CAPTURE_MPLANE,
-          V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)) {
+          V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, io)) {
     GST_ERROR_OBJECT (space, "set_format for %s failed (%dx%d)",
         vsp_info->dev_name[CAP], out_width, out_height);
     return FALSE;
@@ -1561,6 +1563,7 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   struct v4l2_plane out_planes[VIDEO_MAX_PLANES];
   GstVideoInfo *in_info;
   GstVideoInfo *out_info;
+  enum v4l2_memory io[MAX_DEVICES];
   gint i;
 
   space = GST_VSP_FILTER_CAST (filter);
@@ -1574,6 +1577,9 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   in_info = &filter->in_info;
   out_info = &filter->out_info;
 
+  io[OUT] = in_vframe_info->io;
+  io[CAP] = out_vframe_info->io;
+
   /* A stride can't be specified to V4L2 driver in the conversion,
    * so the stride which isn't equal to the width of an output image can't
    * be dealt with. Therefore the width of the output port should be
@@ -1582,7 +1588,7 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   if (!set_vsp_entities (space, in_info->finfo->format, in_info->width,
           in_info->height, out_info->finfo->format,
           ((out_stride >= 0) ? out_stride : out_info->stride[0]) /
-          out_info->finfo->pixel_stride[0], out_info->height)) {
+          out_info->finfo->pixel_stride[0], out_info->height, io)) {
     GST_ERROR_OBJECT (space, "set_vsp_entities failed");
     return GST_FLOW_ERROR;
   }
