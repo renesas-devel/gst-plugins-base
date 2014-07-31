@@ -1271,13 +1271,13 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     GstBuffer * outbuf)
 {
   GstVideoFilter *filter = GST_VIDEO_FILTER_CAST (trans);
-  GstMemory *out_gmem[GST_VIDEO_MAX_PLANES];
+  GstMemory *in_gmem[GST_VIDEO_MAX_PLANES], *out_gmem[GST_VIDEO_MAX_PLANES];
   GstVideoFrame in_frame, out_frame;
   GstVspFilterFrameInfo in_vframe_info, out_vframe_info;
   GstVideoMeta *meta;
   gint out_stride;
   GstFlowReturn ret;
-  gint out_n_mem;
+  gint in_n_mem, out_n_mem;
   gint i;
 
   if (G_UNLIKELY (!filter->negotiated))
@@ -1289,15 +1289,25 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   else
     out_stride = -1;
 
+  in_n_mem = gst_buffer_n_memory (inbuf);
+  for (i = 0; i < in_n_mem; i++)
+    in_gmem[i] = gst_buffer_get_memory (inbuf, i);
+
   out_n_mem = gst_buffer_n_memory (outbuf);
   for (i = 0; i < out_n_mem; i++)
     out_gmem[i] = gst_buffer_get_memory (outbuf, i);
 
-  if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
-    goto invalid_buffer;
+  if (gst_is_dmabuf_memory (in_gmem[0])) {
+    in_vframe_info.io = V4L2_MEMORY_DMABUF;
+    for (i = 0; i < in_n_mem; i++)
+      in_vframe_info.vframe.dmafd[i] = gst_dmabuf_memory_get_fd (in_gmem[i]);
+  } else {
+    if (!gst_video_frame_map (&in_frame, &filter->in_info, inbuf, GST_MAP_READ))
+      goto invalid_buffer;
 
-  in_vframe_info.io = V4L2_MEMORY_USERPTR;
-  in_vframe_info.vframe.frame = &in_frame;
+    in_vframe_info.io = V4L2_MEMORY_USERPTR;
+    in_vframe_info.vframe.frame = &in_frame;
+  }
 
   if (gst_is_dmabuf_memory (out_gmem[0])) {
     out_vframe_info.io = V4L2_MEMORY_DMABUF;
@@ -1316,10 +1326,13 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
       gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
       &out_vframe_info, out_stride);
 
-  gst_video_frame_unmap (&in_frame);
+  if (!gst_is_dmabuf_memory (in_gmem[0]))
+    gst_video_frame_unmap (&in_frame);
   if (!gst_is_dmabuf_memory (out_gmem[0]))
     gst_video_frame_unmap (&out_frame);
 
+  for (i = 0; i < in_n_mem; i++)
+    gst_memory_unref (in_gmem[i]);
   for (i = 0; i < out_n_mem; i++)
     gst_memory_unref (out_gmem[i]);
 
@@ -1587,11 +1600,27 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
     return GST_FLOW_ERROR;
   }
 
-  /* set up planes for queuing an input buffer */
-  for (i = 0; i < vsp_info->n_planes[OUT]; i++) {
-    in_planes[i].m.userptr =
-        (unsigned long) in_vframe_info->vframe.frame->map[i].data;
-    in_planes[i].length = in_vframe_info->vframe.frame->map[i].size;
+  /* set up planes for queuing input buffers */
+  switch (in_vframe_info->io) {
+    case V4L2_MEMORY_USERPTR:
+      for (i = 0; i < vsp_info->n_planes[OUT]; i++) {
+        in_planes[i].m.userptr =
+            (unsigned long) in_vframe_info->vframe.frame->map[i].data;
+        in_planes[i].length = in_vframe_info->vframe.frame->map[i].size;
+      }
+      break;
+    case V4L2_MEMORY_DMABUF:
+      for (i = 0; i < vsp_info->n_planes[OUT]; i++) {
+        in_planes[i].m.fd = in_vframe_info->vframe.dmafd[i];
+        /* In the kernel space, the length (memory size) is obtained from
+           the dmabuf descriptor when the length is specified as 0. */
+        in_planes[i].length = 0;
+        in_planes[i].data_offset = 0;
+      }
+      break;
+    default:
+      GST_ERROR_OBJECT (space, "unsupported V4L2 I/O method");
+      return GST_FLOW_ERROR;
   }
 
   /* set up planes for queuing output buffers */
