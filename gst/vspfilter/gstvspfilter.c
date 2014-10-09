@@ -39,6 +39,9 @@
 #endif
 
 #include "gstvspfilter.h"
+#ifdef HAVE_MEDIACTL
+#include <mediactl/mediactl.h>
+#endif
 
 #include <gst/video/video.h>
 #include <gst/video/gstvideometa.h>
@@ -90,9 +93,6 @@ static void gst_vsp_filter_set_property (GObject * object,
 static void gst_vsp_filter_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
 
-static gboolean gst_vsp_filter_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
 static GstFlowReturn gst_vsp_filter_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 static GstFlowReturn gst_vsp_filter_transform_frame_process (GstVideoFilter *
@@ -886,41 +886,6 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
   return TRUE;
 }
 
-static gboolean
-gst_vsp_filter_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info)
-{
-  GstVspFilter *space;
-  GstVspFilterVspInfo *vsp_info;
-
-  space = GST_VSP_FILTER_CAST (filter);
-  vsp_info = space->vsp_info;
-
-  /* these must match */
-  if (in_info->fps_n != out_info->fps_n || in_info->fps_d != out_info->fps_d)
-    goto format_mismatch;
-
-  /* if present, these must match too */
-  if (in_info->interlace_mode != out_info->interlace_mode)
-    goto format_mismatch;
-
-  GST_DEBUG ("reconfigured %d %d", GST_VIDEO_INFO_FORMAT (in_info),
-      GST_VIDEO_INFO_FORMAT (out_info));
-
-  /* For the reinitialization of entities pipeline */
-  vsp_info->already_setup_info = FALSE;
-
-  return TRUE;
-
-  /* ERRORS */
-format_mismatch:
-  {
-    GST_ERROR_OBJECT (space, "input and output formats do not match");
-    return FALSE;
-  }
-}
-
 static void
 close_device (GstVspFilter * space, gint fd, gint index)
 {
@@ -1075,14 +1040,73 @@ static gboolean
 gst_vsp_filter_vsp_device_init (GstVspFilter * space)
 {
   GstVspFilterVspInfo *vsp_info;
+#ifdef HAVE_MEDIACTL
+  struct media_device *media;
+  struct media_entity *entity;
+#else
   static const gchar *config_name = "gstvspfilter.conf";
   static const gchar *env_config_name = "GST_VSP_FILTER_CONFIG_DIR";
   gchar filename[256];
   gchar str[256];
+#endif
   FILE *fp;
 
   vsp_info = space->vsp_info;
 
+#ifdef HAVE_MEDIACTL
+  GST_DEBUG_OBJECT (space, "Get the input device name");
+
+  media = media_device_new("/dev/media0");
+  if (media == NULL) {
+          printf("Failed to create media device\n");
+          goto skip_config;
+  }
+
+  entity = media_get_entity_by_name(media, "vsp1.2 rpf.0 input",
+                                    strlen("vsp1.2 rpf.0 input"));
+  if (entity == NULL) {
+          printf("Entity '%s' not found\n", "vsp1.2 rpf.0 input");
+          goto skip_config;
+  }
+
+#if 0
+  GST_DEBUG_OBJECT (space, "Get the input device name");
+  if ((fp = popen("media-ctl -d /dev/media0 -e 'vsp1.2 rpf.0 input'", "r")) == NULL) {
+    GST_WARNING_OBJECT (space, "failed to get the input device name");
+    goto skip_config;
+  } else {
+    while(!feof (p)) {
+      fread(str, sizeof(str), 1, fp);
+    }
+    GST_DEBUG_OBJECT (space, "The input device name is %s", str);
+  }
+
+  if (!vsp_info->prop_dev_name[OUT]) {
+    str[strlen (str) - 1] = '\0';
+    g_free (vsp_info->dev_name[OUT]);
+    vsp_info->dev_name[OUT] = g_strdup (str);
+  }
+  pclose (fp);
+
+  GST_DEBUG_OBJECT (space, "Get the output device name");
+  if ((fp = popen("media-ctl -d /dev/media0 -e 'vsp1.2 wpf.0 output'", "r")) == NULL) {
+    GST_WARNING_OBJECT (space, "failed to get the output device name");
+    goto skip_config;
+  } else {
+    while(!feof (p)) {
+      fread(str, sizeof(str), 1, fp);
+    }
+    GST_DEBUG_OBJECT (space, "The output device name is %s", str);
+  }
+
+  if (!vsp_info->prop_dev_name[CAP]) {
+    str[strlen (str) - 1] = '\0';
+    g_free (vsp_info->dev_name[CAP]);
+    vsp_info->dev_name[CAP] = g_strdup (str);
+  }
+  pclose (fp);
+#endif
+#else
   /* Set the default path of gstvspfilter.conf */
   g_setenv (env_config_name, "/etc", FALSE);
 
@@ -1116,6 +1140,7 @@ gst_vsp_filter_vsp_device_init (GstVspFilter * space)
   }
 
   fclose (fp);
+#endif
 
 skip_config:
   GST_DEBUG_OBJECT (space, "input device=%s output device=%s",
@@ -1376,6 +1401,64 @@ invalid_buffer:
   }
 }
 
+static gboolean
+gst_vsp_filter_set_caps (GstBaseTransform * trans, GstCaps * incaps,
+    GstCaps * outcaps)
+{
+  GstVideoFilter *filter = GST_VIDEO_FILTER_CAST (trans);
+  GstVideoFilterClass *fclass;
+  GstVideoInfo in_info, out_info;
+  GstVspFilter *space;
+  GstVspFilterVspInfo *vsp_info;
+
+  space = GST_VSP_FILTER_CAST (filter);
+  fclass = GST_VIDEO_FILTER_GET_CLASS (filter);
+  vsp_info = space->vsp_info;
+
+  /* input caps */
+  if (!gst_video_info_from_caps (&in_info, incaps))
+    goto invalid_caps;
+
+  /* output caps */
+  if (!gst_video_info_from_caps (&out_info, outcaps))
+    goto invalid_caps;
+
+  /* these must match */
+  if (in_info.fps_n != out_info.fps_n || in_info.fps_d != out_info.fps_d)
+    goto format_mismatch;
+
+  /* if present, these must match too */
+  if (in_info.interlace_mode != out_info.interlace_mode)
+    goto format_mismatch;
+
+  GST_DEBUG ("reconfigured %d %d", GST_VIDEO_INFO_FORMAT (&in_info),
+      GST_VIDEO_INFO_FORMAT (&out_info));
+
+  /* For the reinitialization of entities pipeline */
+  vsp_info->already_setup_info = FALSE;
+
+  filter->in_info = in_info;
+  filter->out_info = out_info;
+  GST_BASE_TRANSFORM_CLASS (fclass)->transform_ip_on_passthrough = FALSE;
+  filter->negotiated = TRUE;
+
+  return TRUE;
+
+  /* ERRORS */
+invalid_caps:
+  {
+    GST_ERROR_OBJECT (space, "invalid caps");
+    filter->negotiated = FALSE;
+    return FALSE;
+  }
+format_mismatch:
+  {
+    GST_ERROR_OBJECT (space, "input and output formats do not match");
+    filter->negotiated = FALSE;
+    return FALSE;
+  }
+}
+
 static void
 gst_vsp_filter_class_init (GstVspFilterClass * klass)
 {
@@ -1426,10 +1509,11 @@ gst_vsp_filter_class_init (GstVspFilterClass * klass)
       GST_DEBUG_FUNCPTR (gst_vsp_filter_decide_allocation);
   gstbasetransform_class->transform =
       GST_DEBUG_FUNCPTR (gst_vsp_filter_transform);
+  gstbasetransform_class->set_caps =
+      GST_DEBUG_FUNCPTR (gst_vsp_filter_set_caps);
 
   gstbasetransform_class->passthrough_on_same_caps = TRUE;
 
-  gstvideofilter_class->set_info = GST_DEBUG_FUNCPTR (gst_vsp_filter_set_info);
   gstvideofilter_class->transform_frame =
       GST_DEBUG_FUNCPTR (gst_vsp_filter_transform_frame);
 }
