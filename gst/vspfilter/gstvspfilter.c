@@ -93,8 +93,6 @@ static void gst_vsp_filter_set_property (GObject * object,
 static void gst_vsp_filter_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
 
-static GstFlowReturn gst_vsp_filter_transform_frame (GstVideoFilter * filter,
-    GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 static GstFlowReturn gst_vsp_filter_transform_frame_process (GstVideoFilter *
     filter, GstVspFilterFrameInfo * in_vframe_info,
     GstVspFilterFrameInfo * out_vframe_info, gint out_stride);
@@ -1466,7 +1464,6 @@ gst_vsp_filter_class_init (GstVspFilterClass * klass)
   GstElementClass *gstelement_class = (GstElementClass *) klass;
   GstBaseTransformClass *gstbasetransform_class =
       (GstBaseTransformClass *) klass;
-  GstVideoFilterClass *gstvideofilter_class = (GstVideoFilterClass *) klass;
 
   gobject_class->set_property = gst_vsp_filter_set_property;
   gobject_class->get_property = gst_vsp_filter_get_property;
@@ -1513,9 +1510,6 @@ gst_vsp_filter_class_init (GstVspFilterClass * klass)
       GST_DEBUG_FUNCPTR (gst_vsp_filter_set_caps);
 
   gstbasetransform_class->passthrough_on_same_caps = TRUE;
-
-  gstvideofilter_class->transform_frame =
-      GST_DEBUG_FUNCPTR (gst_vsp_filter_transform_frame);
 }
 
 static void
@@ -1807,20 +1801,6 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   }
 
   return GST_FLOW_OK;
-}
-
-static GstFlowReturn
-gst_vsp_filter_transform_frame (GstVideoFilter * filter,
-    GstVideoFrame * in_frame, GstVideoFrame * out_frame)
-{
-  GstVspFilterFrameInfo in_vframe_info, out_vframe_info;
-
-  in_vframe_info.io = out_vframe_info.io = V4L2_MEMORY_USERPTR;
-  in_vframe_info.vframe.frame = in_frame;
-  out_vframe_info.vframe.frame = out_frame;
-
-  return gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
-      &out_vframe_info, GST_VIDEO_FRAME_COMP_STRIDE (out_frame, 0));
 }
 
 static gboolean
