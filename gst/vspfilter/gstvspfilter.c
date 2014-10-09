@@ -779,10 +779,10 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
   if ((in_width != out_width) || (in_height != out_height)) {
     gchar path[256];
     const gchar *resz_entity_name = "uds.0";
-    gint resz_subdev_fd;
 
-    resz_subdev_fd = open_v4lsubdev (vsp_info->ip_name, resz_entity_name, path);
-    if (resz_subdev_fd < 0) {
+    vsp_info->resz_subdev_fd =
+        open_v4lsubdev (vsp_info->ip_name, resz_entity_name, path);
+    if (vsp_info->resz_subdev_fd < 0) {
       GST_ERROR_OBJECT (space, "cannot open a subdev file for %s",
           resz_entity_name);
       return FALSE;
@@ -817,12 +817,12 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
     GST_DEBUG_OBJECT (space, "A link from %s to %s enabled.",
         resz_entity_name, vsp_info->entity_name[CAP]);
 
-    if (!init_entity_pad (space, resz_subdev_fd, RESZ, 0, in_width,
+    if (!init_entity_pad (space, vsp_info->resz_subdev_fd, RESZ, 0, in_width,
             in_height, vsp_info->code[CAP])) {
       GST_ERROR_OBJECT (space, "init_entity_pad failed");
       return FALSE;
     }
-    if (!init_entity_pad (space, resz_subdev_fd, RESZ, 1, out_width,
+    if (!init_entity_pad (space, vsp_info->resz_subdev_fd, RESZ, 1, out_width,
             out_height, vsp_info->code[CAP])) {
       GST_ERROR_OBJECT (space, "init_entity_pad failed");
       return FALSE;

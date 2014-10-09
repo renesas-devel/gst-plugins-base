@@ -88,6 +88,7 @@ struct _GstVspFilterVspInfo {
   gchar *entity_name[MAX_DEVICES];
   gint media_fd;
   gint v4lsub_fd[MAX_DEVICES];
+  gint resz_subdev_fd;
   guint format[MAX_DEVICES];
   enum v4l2_mbus_pixelcode code[MAX_DEVICES];
   guint n_planes[MAX_DEVICES];
