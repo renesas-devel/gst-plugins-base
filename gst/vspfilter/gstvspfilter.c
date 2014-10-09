@@ -1154,6 +1154,8 @@ gst_vsp_filter_vsp_device_deinit (GstVspFilter * space)
         V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
   }
 
+  close (vsp_info->media_fd);
+
   close_device (space, vsp_info->v4lout_fd, OUT);
   close_device (space, vsp_info->v4lcap_fd, CAP);
 
