@@ -780,6 +780,9 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
     gchar path[256];
     const gchar *resz_entity_name = "uds.0";
 
+    if (vsp_info->resz_subdev_fd >= 0)
+      close (vsp_info->resz_subdev_fd);
+
     vsp_info->resz_subdev_fd =
         open_v4lsubdev (vsp_info->ip_name, resz_entity_name, path);
     if (vsp_info->resz_subdev_fd < 0) {
@@ -1159,6 +1162,11 @@ gst_vsp_filter_vsp_device_deinit (GstVspFilter * space)
         V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
   }
 
+  if (vsp_info->resz_subdev_fd >= 0) {
+    close (vsp_info->resz_subdev_fd);
+    vsp_info->resz_subdev_fd = -1;
+  }
+
   close (vsp_info->media_fd);
 
   close_device (space, vsp_info->v4lout_fd, OUT);
@@ -1435,6 +1443,8 @@ gst_vsp_filter_init (GstVspFilter * space)
 
   vsp_info->dev_name[OUT] = g_strdup (DEFAULT_PROP_VSP_DEVFILE_INPUT);
   vsp_info->dev_name[CAP] = g_strdup (DEFAULT_PROP_VSP_DEVFILE_OUTPUT);
+
+  vsp_info->resz_subdev_fd = -1;
 
   space->vsp_info = vsp_info;
 }
