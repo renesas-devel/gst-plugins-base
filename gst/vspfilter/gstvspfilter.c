@@ -759,13 +759,6 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
     return FALSE;
   }
 
-  vsp_info->media_fd = open_media_device (space);
-  if (vsp_info->media_fd < 0) {
-    GST_ERROR_OBJECT (space, "cannot open a media file for %s",
-        vsp_info->ip_name);
-    return FALSE;
-  }
-
   sprintf (tmp, "%s %s", vsp_info->ip_name, vsp_info->entity_name[OUT]);
   ret = get_media_entity (space, tmp, &vsp_info->entity[OUT]);
   GST_DEBUG_OBJECT (space, "ret = %d, entity[OUT] = %s", ret,
@@ -1134,6 +1127,13 @@ skip_config:
           V4L2_CAP_VIDEO_CAPTURE_MPLANE, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)) {
     GST_ERROR_OBJECT (space, "init_device for %s failed",
         vsp_info->dev_name[CAP]);
+    return FALSE;
+  }
+
+  vsp_info->media_fd = open_media_device (space);
+  if (vsp_info->media_fd < 0) {
+    GST_ERROR_OBJECT (space, "cannot open a media file for %s",
+        vsp_info->ip_name);
     return FALSE;
   }
 
