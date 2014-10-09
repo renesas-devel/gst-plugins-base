@@ -889,8 +889,10 @@ gst_vsp_filter_set_info (GstVideoFilter * filter,
     GstVideoInfo * out_info)
 {
   GstVspFilter *space;
+  GstVspFilterVspInfo *vsp_info;
 
   space = GST_VSP_FILTER_CAST (filter);
+  vsp_info = space->vsp_info;
 
   /* these must match */
   if (in_info->fps_n != out_info->fps_n || in_info->fps_d != out_info->fps_d)
@@ -902,6 +904,9 @@ gst_vsp_filter_set_info (GstVideoFilter * filter,
 
   GST_DEBUG ("reconfigured %d %d", GST_VIDEO_INFO_FORMAT (in_info),
       GST_VIDEO_INFO_FORMAT (out_info));
+
+  /* For the reinitialization of entities pipeline */
+  vsp_info->already_setup_info = FALSE;
 
   return TRUE;
 
