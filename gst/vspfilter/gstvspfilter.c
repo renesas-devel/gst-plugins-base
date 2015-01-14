@@ -1173,6 +1173,7 @@ gst_vsp_filter_vsp_device_deinit (GstVspFilter * space)
   close_device (space, vsp_info->v4lcap_fd, CAP);
 
   g_free (vsp_info->ip_name);
+  vsp_info->ip_name = NULL;
 
   vsp_info->already_device_initialized[OUT] =
       vsp_info->already_device_initialized[CAP] = FALSE;
