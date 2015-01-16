@@ -1167,6 +1167,9 @@ gst_vsp_filter_vsp_device_deinit (GstVspFilter * space)
     vsp_info->resz_subdev_fd = -1;
   }
 
+  close (vsp_info->v4lsub_fd[OUT]);
+  close (vsp_info->v4lsub_fd[CAP]);
+
   close (vsp_info->media_fd);
 
   close_device (space, vsp_info->v4lout_fd, OUT);
