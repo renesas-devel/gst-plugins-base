@@ -1160,6 +1160,7 @@ gst_vsp_filter_vsp_device_deinit (GstVspFilter * space)
         V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
     stop_capturing (space, vsp_info->v4lcap_fd, CAP,
         V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+    vsp_info->is_stream_started = FALSE;
   }
 
   if (vsp_info->resz_subdev_fd >= 0) {
