@@ -1321,69 +1321,68 @@ gst_vsp_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
       query);
 }
 
+static gboolean
+gst_vsp_filter_set_frame_info (GstVideoInfo * info, GstBuffer * buf,
+    GstMapFlags flags, GstMemory * gmem[GST_VIDEO_MAX_PLANES], gint * n_mem,
+    gint stride[GST_VIDEO_MAX_PLANES], GstVspFilterFrameInfo * vframe_info)
+{
+  GstVideoMeta *meta;
+  gint i;
+
+  meta = gst_buffer_get_video_meta (buf);
+
+  *n_mem = gst_buffer_n_memory (buf);
+  for (i = 0; i < *n_mem; i++) {
+    gmem[i] = gst_buffer_get_memory (buf, i);
+
+    /* Set row stride in bytes */
+    if (meta)
+      stride[i] = GST_VIDEO_FORMAT_INFO_STRIDE (info->finfo, meta->stride, i);
+  }
+
+  if (gst_is_dmabuf_memory (gmem[0])) {
+    vframe_info->io = V4L2_MEMORY_DMABUF;
+    for (i = 0; i < *n_mem; i++)
+      vframe_info->vframe.dmafd[i] = gst_dmabuf_memory_get_fd (gmem[i]);
+  } else {
+    if (!gst_video_frame_map (&vframe_info->vframe.frame, info, buf, flags))
+      return FALSE;
+
+    vframe_info->io = V4L2_MEMORY_USERPTR;
+  }
+
+  return TRUE;
+}
+
 static GstFlowReturn
 gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     GstBuffer * outbuf)
 {
   GstVideoFilter *filter = GST_VIDEO_FILTER_CAST (trans);
+  GstVspFilter *space;
   GstMemory *in_gmem[GST_VIDEO_MAX_PLANES], *out_gmem[GST_VIDEO_MAX_PLANES];
   GstVspFilterFrameInfo in_vframe_info, out_vframe_info;
-  GstVideoMeta *in_meta, *out_meta;
   gint in_stride[GST_VIDEO_MAX_PLANES] = { 0 };
   gint out_stride[GST_VIDEO_MAX_PLANES] = { 0 };
   GstFlowReturn ret;
   gint in_n_mem, out_n_mem;
   gint i;
 
+  space = GST_VSP_FILTER_CAST (filter);
+
   if (G_UNLIKELY (!filter->negotiated))
     goto unknown_format;
 
-  in_meta = gst_buffer_get_video_meta (inbuf);
-  out_meta = gst_buffer_get_video_meta (outbuf);
-
-  in_n_mem = gst_buffer_n_memory (inbuf);
-  out_n_mem = gst_buffer_n_memory (outbuf);
-
-  for (i = 0; i < in_n_mem; i++) {
-    in_gmem[i] = gst_buffer_get_memory (inbuf, i);
-
-    /* Set row stride in bytes */
-    if (in_meta)
-      in_stride[i] = GST_VIDEO_FORMAT_INFO_STRIDE (filter->in_info.finfo,
-          in_meta->stride, i);
+  if (!gst_vsp_filter_set_frame_info (&filter->in_info, inbuf, GST_MAP_READ,
+          in_gmem, &in_n_mem, in_stride, &in_vframe_info)) {
+    GST_ERROR_OBJECT (space, "gst_vsp_filter_set_frame_info failed [input]");
+    goto invalid_buffer;
   }
 
-  for (i = 0; i < out_n_mem; i++) {
-    out_gmem[i] = gst_buffer_get_memory (outbuf, i);
-
-    /* Set row stride in bytes */
-    if (out_meta)
-      out_stride[i] = GST_VIDEO_FORMAT_INFO_STRIDE (filter->out_info.finfo,
-          out_meta->stride, i);
-  }
-
-  if (gst_is_dmabuf_memory (in_gmem[0])) {
-    in_vframe_info.io = V4L2_MEMORY_DMABUF;
-    for (i = 0; i < in_n_mem; i++)
-      in_vframe_info.vframe.dmafd[i] = gst_dmabuf_memory_get_fd (in_gmem[i]);
-  } else {
-    if (!gst_video_frame_map (&in_vframe_info.vframe.frame, &filter->in_info,
-            inbuf, GST_MAP_READ))
-      goto invalid_buffer;
-
-    in_vframe_info.io = V4L2_MEMORY_USERPTR;
-  }
-
-  if (gst_is_dmabuf_memory (out_gmem[0])) {
-    out_vframe_info.io = V4L2_MEMORY_DMABUF;
-    for (i = 0; i < out_n_mem; i++)
-      out_vframe_info.vframe.dmafd[i] = gst_dmabuf_memory_get_fd (out_gmem[i]);
-  } else {
-    if (!gst_video_frame_map (&out_vframe_info.vframe.frame, &filter->out_info,
-            outbuf, GST_MAP_WRITE))
-      goto invalid_buffer;
-
-    out_vframe_info.io = V4L2_MEMORY_USERPTR;
+  if (!gst_vsp_filter_set_frame_info (&filter->out_info, outbuf, GST_MAP_WRITE,
+          out_gmem, &out_n_mem, out_stride, &out_vframe_info)) {
+    GST_ERROR_OBJECT (space, "gst_vsp_filter_set_frame_info failed [output]");
+    goto invalid_buffer;
   }
 
   ret =
