@@ -95,7 +95,9 @@ static void gst_vsp_filter_get_property (GObject * object,
 
 static GstFlowReturn gst_vsp_filter_transform_frame_process (GstVideoFilter *
     filter, GstVspFilterFrameInfo * in_vframe_info,
-    GstVspFilterFrameInfo * out_vframe_info, gint out_stride);
+    GstVspFilterFrameInfo * out_vframe_info,
+    gint in_stride[GST_VIDEO_MAX_PLANES],
+    gint out_stride[GST_VIDEO_MAX_PLANES]);
 
 /* copies the given caps */
 static GstCaps *
@@ -432,8 +434,8 @@ request_buffers (GstVspFilter * space, gint fd, gint index,
 
 static gboolean
 set_format (GstVspFilter * space, gint fd, guint width, guint height,
-    gint index, guint captype, enum v4l2_buf_type buftype,
-    enum v4l2_memory io[MAX_DEVICES])
+    gint stride[GST_VIDEO_MAX_PLANES], gint index, guint captype,
+    enum v4l2_buf_type buftype, enum v4l2_memory io[MAX_DEVICES])
 {
   GstVspFilterVspInfo *vsp_info;
   struct v4l2_format fmt;
@@ -448,6 +450,12 @@ set_format (GstVspFilter * space, gint fd, guint width, guint height,
   fmt.fmt.pix_mp.height = height;
   fmt.fmt.pix_mp.pixelformat = vsp_info->format[index];
   fmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
+
+  for (i = 0; i < vsp_info->n_planes[index]; i++) {
+    GST_DEBUG_OBJECT (space, "Set bytesperline = %d (index = %d plane = %d)\n",
+        stride[i], index, i);
+    fmt.fmt.pix_mp.plane_fmt[i].bytesperline = stride[i];
+  }
 
   if (-1 == xioctl (fd, VIDIOC_S_FMT, &fmt)) {
     GST_ERROR_OBJECT (space, "VIDIOC_S_FMT for %s failed.",
@@ -718,8 +726,9 @@ get_wpf_output_entity_name (GstVspFilter * space, gchar * wpf_output_name,
 
 static gboolean
 set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
-    gint in_height, GstVideoFormat out_fmt, gint out_width, gint out_height,
-    enum v4l2_memory io[MAX_DEVICES])
+    gint in_height, gint in_stride[GST_VIDEO_MAX_PLANES],
+    GstVideoFormat out_fmt, gint out_width, gint out_height,
+    gint out_stride[GST_VIDEO_MAX_PLANES], enum v4l2_memory io[MAX_DEVICES])
 {
   GstVspFilterVspInfo *vsp_info;
   gint ret;
@@ -743,14 +752,14 @@ set_vsp_entities (GstVspFilter * space, GstVideoFormat in_fmt, gint in_width,
       vsp_info->format[CAP], vsp_info->code[CAP], vsp_info->n_planes[CAP]);
 
   if (!set_format (space, vsp_info->v4lout_fd, in_width, in_height,
-          OUT, V4L2_CAP_VIDEO_OUTPUT_MPLANE,
+          in_stride, OUT, V4L2_CAP_VIDEO_OUTPUT_MPLANE,
           V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, io)) {
     GST_ERROR_OBJECT (space, "set_format for %s failed (%dx%d)",
         vsp_info->dev_name[OUT], in_width, in_height);
     return FALSE;
   }
   if (!set_format (space, vsp_info->v4lcap_fd, out_width, out_height,
-          CAP, V4L2_CAP_VIDEO_CAPTURE_MPLANE,
+          out_stride, CAP, V4L2_CAP_VIDEO_CAPTURE_MPLANE,
           V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, io)) {
     GST_ERROR_OBJECT (space, "set_format for %s failed (%dx%d)",
         vsp_info->dev_name[CAP], out_width, out_height);
@@ -1320,8 +1329,9 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstMemory *in_gmem[GST_VIDEO_MAX_PLANES], *out_gmem[GST_VIDEO_MAX_PLANES];
   GstVideoFrame in_frame, out_frame;
   GstVspFilterFrameInfo in_vframe_info, out_vframe_info;
-  GstVideoMeta *meta;
-  gint out_stride;
+  GstVideoMeta *in_meta, *out_meta;
+  gint in_stride[GST_VIDEO_MAX_PLANES] = { 0 };
+  gint out_stride[GST_VIDEO_MAX_PLANES] = { 0 };
   GstFlowReturn ret;
   gint in_n_mem, out_n_mem;
   gint i;
@@ -1329,19 +1339,29 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   if (G_UNLIKELY (!filter->negotiated))
     goto unknown_format;
 
-  meta = gst_buffer_get_video_meta (outbuf);
-  if (meta)
-    out_stride = meta->stride[0];
-  else
-    out_stride = -1;
+  in_meta = gst_buffer_get_video_meta (inbuf);
+  out_meta = gst_buffer_get_video_meta (outbuf);
 
   in_n_mem = gst_buffer_n_memory (inbuf);
-  for (i = 0; i < in_n_mem; i++)
+  out_n_mem = gst_buffer_n_memory (outbuf);
+
+  for (i = 0; i < in_n_mem; i++) {
     in_gmem[i] = gst_buffer_get_memory (inbuf, i);
 
-  out_n_mem = gst_buffer_n_memory (outbuf);
-  for (i = 0; i < out_n_mem; i++)
+    /* Set row stride in bytes */
+    if (in_meta)
+      in_stride[i] = GST_VIDEO_FORMAT_INFO_STRIDE (filter->in_info.finfo,
+          in_meta->stride, i);
+  }
+
+  for (i = 0; i < out_n_mem; i++) {
     out_gmem[i] = gst_buffer_get_memory (outbuf, i);
+
+    /* Set row stride in bytes */
+    if (out_meta)
+      out_stride[i] = GST_VIDEO_FORMAT_INFO_STRIDE (filter->out_info.finfo,
+          out_meta->stride, i);
+  }
 
   if (gst_is_dmabuf_memory (in_gmem[0])) {
     in_vframe_info.io = V4L2_MEMORY_DMABUF;
@@ -1370,7 +1390,7 @@ gst_vsp_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
 
   ret =
       gst_vsp_filter_transform_frame_process (filter, &in_vframe_info,
-      &out_vframe_info, out_stride);
+      &out_vframe_info, in_stride, out_stride);
 
   if (!gst_is_dmabuf_memory (in_gmem[0]))
     gst_video_frame_unmap (&in_frame);
@@ -1662,7 +1682,8 @@ start_capturing (GstVspFilter * space, int fd, int index,
 static GstFlowReturn
 gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
     GstVspFilterFrameInfo * in_vframe_info,
-    GstVspFilterFrameInfo * out_vframe_info, gint out_stride)
+    GstVspFilterFrameInfo * out_vframe_info,
+    gint in_stride[GST_VIDEO_MAX_PLANES], gint out_stride[GST_VIDEO_MAX_PLANES])
 {
   GstVspFilter *space;
   GstVspFilterVspInfo *vsp_info;
@@ -1690,15 +1711,9 @@ gst_vsp_filter_transform_frame_process (GstVideoFilter * filter,
   io[OUT] = in_vframe_info->io;
   io[CAP] = out_vframe_info->io;
 
-  /* A stride can't be specified to V4L2 driver in the conversion,
-   * so the stride which isn't equal to the width of an output image can't
-   * be dealt with. Therefore the width of the output port should be
-   * specified as the stride of an output buffer.
-   */
   if (!set_vsp_entities (space, in_info->finfo->format, in_info->width,
-          in_info->height, out_info->finfo->format,
-          ((out_stride >= 0) ? out_stride : out_info->stride[0]) /
-          out_info->finfo->pixel_stride[0], out_info->height, io)) {
+          in_info->height, in_stride, out_info->finfo->format, out_info->width,
+          out_info->height, out_stride, io)) {
     GST_ERROR_OBJECT (space, "set_vsp_entities failed");
     return GST_FLOW_ERROR;
   }
