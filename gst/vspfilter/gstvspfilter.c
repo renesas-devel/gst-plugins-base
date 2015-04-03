@@ -239,6 +239,12 @@ gst_vsp_filter_is_caps_format_supported_for_vsp (GstVspFilter * space,
   gst_structure_get_int (outs, "width", &out_w);
   gst_structure_get_int (outs, "height", &out_h);
 
+  if ((out_fmt == GST_VIDEO_FORMAT_NV12) && ((out_w % 2) || (out_h % 2))) {
+    GST_ERROR_OBJECT (space,
+        "NV12 Frame Length Check failed. (%dx%d)", out_w, out_h);
+    return FALSE;
+  }
+
   v4l2fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
   v4l2fmt.fmt.pix_mp.width = in_w;
   v4l2fmt.fmt.pix_mp.height = in_h;
